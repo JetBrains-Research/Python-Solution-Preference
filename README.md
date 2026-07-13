@@ -28,8 +28,9 @@ For each of your two tasks:
    - Rate both solutions on the four characteristics described in your form.
    - Choose which of the two solutions you prefer and answer the follow-up questions.
 
-There is no right answer.
-Judge the code the way you would judge a colleague's or a tool's output for your own project.
+> [!TIP]
+> There is no right answer.
+> Judge the code the way you would judge a colleague's or a tool's output for your own project.
 
 ## Repository structure
 
