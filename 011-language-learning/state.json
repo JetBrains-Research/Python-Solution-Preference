@@ -1,0 +1,16 @@
+{
+  "lessons": {
+    "Lesson 1": {
+      "status": "Completed - 5/5 correct (100%)",
+      "position": 4,
+      "score": 5,
+      "unlocked": true
+    },
+    "Lesson 2": {
+      "status": "Not started",
+      "position": 0,
+      "score": 0,
+      "unlocked": true
+    }
+  }
+}
