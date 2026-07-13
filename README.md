@@ -9,16 +9,16 @@ The two pairs belong to different tasks, so you will make one comparison per tas
 
 For each of your two tasks:
 
-1. **Read the task** — each task is a GitHub *issue* in this repository.
+1. **Read the task**: each task is a GitHub *issue* in this repository.
    Your survey form links the issue directly. If you only have the task id, search the issues list for it (for example `[001]`).
    The issue describes a small backend project that an AI coding agent was asked to build from scratch.
-2. **Check the starting files** — the task's folder on the `main` branch (for example `001-barber-scheduling/`) contains any files that were provided to the agent under `assets/`.
+2. **Check the starting files**: the task's folder on the `main` branch (for example `001-barber-scheduling/`) contains any files that were provided to the agent under `assets/`.
    An empty folder means the agent began from an empty directory.
-3. **Review both solutions** — each solution is a *pull request*.
+3. **Review both solutions**: each solution is a *pull request*.
    Your survey form links both PRs. If you only have a solution code, search the pull requests list for it (for example `K7QZM`).
    Use the PR's **Files changed** tab to review the code the agent produced.
    The PR description was written by the AI agent itself as a summary of its own solution, treat it as part of the solution, not as trusted documentation.
-4. **Fill in the survey form** — rate both solutions on the four characteristics described in your form, choose which of the two you prefer, and answer the follow-up questions.
+4. **Fill in the survey form**: rate both solutions on the four characteristics described in your form, choose which of the two you prefer, and answer the follow-up questions.
 
 There is no right answer.
 Judge the code the way you would judge a colleague's or a tool's output for your own project.
