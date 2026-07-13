@@ -1,0 +1,16 @@
+{
+  "lessons": {
+    "1": {
+      "status": "Not started",
+      "current_exercise": 0,
+      "correct": 0,
+      "completed": false
+    },
+    "2": {
+      "status": "Locked",
+      "current_exercise": 0,
+      "correct": 0,
+      "completed": false
+    }
+  }
+}
