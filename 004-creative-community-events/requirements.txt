@@ -1,0 +1,250 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+passlib[bbcrypt]
+pyjwt
+EOF && cat <<'EOF' > models.py
+from datetime import datetime
+from typing import Optional, List
+from sqlmodel import Field, SQLModel, Relationship
+
+class InviteCode(SQLModel, table=True):
+    code: str = Field(primary_key=True)
+    single_use: bool = Field(default=True)
+    max_uses: Optional[int] = Field(default=1)
+    uses: int = Field(default=0)
+    expires_at: Optional[datetime] = Field(default=None)
+    description: Optional[str] = Field(default=None)
+    active: bool = Field(default=True)
+
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True, unique=True)
+    email: str = Field(unique=True)
+    hashed_password: str
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    creative_role: Optional[str] = None
+    bio: Optional[str] = None
+    is_admin: bool = Field(default=False)
+    joined_at: datetime = Field(default_factory=datetime.utcnow)
+    attendances: List["Attendance"] = Relationship(back_populates="user")
+
+class Event(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str
+    description: str
+    datetime: datetime
+    location: str
+    category: str
+    capacity: int
+    price_cents: int = Field(default=0)
+    attendees: List["Attendance"] = Relationship(back_populates="event")
+
+class Attendance(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id")
+    event_id: int = Field(foreign_key="event.id")
+    attended: bool = Field(default=False)
+    amount_owed_cents: int = Field(default=0)
+    payment_status: str = Field(default="unpaid")
+    payment_date: Optional[datetime] = None
+    admin_notes: Optional[str] = None
+    user: Optional[User] = Relationship(back_populates="attendances")
+    event: Optional[Event] = Relationship(back_populates="attendees")
+EOF && cat <<'EOF' > main.py
+import os
+from datetime import datetime, timedelta
+from typing import Optional
+
+import jwt
+from fastapi import Depends, FastAPI, HTTPException, status, Body
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from passlib.context import CryptContext
+from sqlmodel import Session, SQLModel, create_engine, select
+
+from models import User, InviteCode, Event, Attendance
+
+DATABASE_URL = "sqlite:///./community.db"
+engine = create_engine(DATABASE_URL, echo=False)
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
+SECRET_KEY = "very-secret-key"
+ALGORITHM = "HS256"
+
+app = FastAPI()
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+
+def create_database():
+    SQLModel.metadata.create_all(engine)
+
+def get_user_by_username(session: Session, username: str) -> Optional[User]:
+    stmt = select(User).where(User.username == username)
+    return session.exec(stmt).first()
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def authenticate_user(session: Session, username: str, password: str):
+    user = get_user_by_username(session, username)
+    if not user or not verify_password(password, user.hashed_password):
+        return None
+    return user
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(hours=2))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+async def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Depends(get_session)):
+    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except jwt.PyJWTError:
+        raise credentials_exception
+    user = get_user_by_username(session, username)
+    if user is None:
+        raise credentials_exception
+    return user
+
+def is_admin(user: User):
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+@app.on_event("startup")
+def on_startup():
+    create_database()
+    with Session(engine) as session:
+        admin = get_user_by_username(session, "core_admin")
+        if not admin:
+            admin = User(
+                username="core_admin",
+                email="core_admin@example.com",
+                hashed_password=get_password_hash("CoreAdmin!2025"),
+                full_name="Core Admin",
+                location="Bronx, NY",
+                creative_role="Designer",
+                is_admin=True,
+            )
+            session.add(admin)
+            session.commit()
+
+@app.post("/register")
+def register(
+    username: str = Body(...),
+    email: str = Body(...),
+    password: str = Body(...),
+    invite_code: str = Body(...),
+    session: Session = Depends(get_session)
+):
+    code = session.get(InviteCode, invite_code)
+    if not code or not code.active:
+        raise HTTPException(status_code=400, detail="Invalid invite code")
+    if code.expires_at and code.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Invite code expired")
+    if code.single_use and code.uses >= 1:
+        raise HTTPException(status_code=400, detail="Invite code exhausted")
+    if not code.single_use and code.max_uses and code.uses >= code.max_uses:
+        raise HTTPException(status_code=400, detail="Invite code exhausted")
+    if session.exec(select(User).where(User.username == username)).first():
+        raise HTTPException(status_code=400, detail="Username already taken")
+    hashed = get_password_hash(password)
+    user = User(username=username, email=email, hashed_password=hashed)
+    session.add(user)
+    code.uses += 1
+    session.add(code)
+    session.commit()
+    token = create_access_token({"sub": username})
+    return {"access_token": token, "token_type": "bearer"}
+
+@app.post("/token")
+def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
+    user = authenticate_user(session, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
+    access_token = create_access_token({"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/events")
+def list_events(session: Session = Depends(get_session)):
+    now = datetime.utcnow()
+    events = session.exec(select(Event).where(Event.datetime >= now).order_by(Event.datetime)).all()
+    result = []
+    for ev in events:
+        taken = session.exec(select(Attendance).where(Attendance.event_id == ev.id)).count()
+        remaining = ev.capacity - taken
+        result.append({
+            "id": ev.id,
+            "title": ev.title,
+            "description": ev.description[:100],
+            "datetime": ev.datetime.isoformat(),
+            "location": ev.location,
+            "category": ev.category,
+            "capacity": f"{remaining} spots remaining" if remaining > 0 else "Full",
+            "price": "Free" if ev.price_cents == 0 else f"${ev.price_cents/100:.2f}"
+        })
+    return result
+
+@app.get("/events/{event_id}")
+def event_detail(event_id: int, session: Session = Depends(get_session)):
+    ev = session.get(Event, event_id)
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    past = ev.datetime < datetime.utcnow()
+    return {
+        "id": ev.id,
+        "title": ev.title,
+        "description": ev.description,
+        "datetime": ev.datetime.isoformat(),
+        "location": ev.location,
+        "category": ev.category,
+        "capacity": ev.capacity,
+        "price": "Free" if ev.price_cents == 0 else f"${ev.price_cents/100:.2f}",
+        "status": "Event has passed" if past else "Open"
+    }
+
+@app.post("/events/{event_id}/rsvp")
+def rsvp(event_id: int, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    ev = session.get(Event, event_id)
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if ev.datetime < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Cannot RSVP to past events")
+    if not (current_user.full_name and current_user.location and current_user.creative_role):
+        raise HTTPException(status_code=400, detail="Complete profile before RSVPing")
+    taken = session.exec(select(Attendance).where(Attendance.event_id == ev.id)).count()
+    if taken >= ev.capacity:
+        raise HTTPException(status_code=400, detail="Event is full")
+    existing = session.exec(select(Attendance).where(Attendance.event_id == ev.id, Attendance.user_id == current_user.id)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Already RSVPed")
+    owed = ev.price_cents
+    payment_status = "paid" if ev.price_cents == 0 else "unpaid"
+    attendance = Attendance(user_id=current_user.id, event_id=ev.id, amount_owed_cents=owed, payment_status=payment_status)
+    session.add(attendance)
+    session.commit()
+    return {"detail": "RSVP successful"}
+
+@app.get("/my/events")
+def my_events(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    records = session.exec(select(Attendance).where(Attendance.user_id == current_user.id)).all()
+    result = []
+    total_owed = 0.0
+    for rec in records:
+        amt = rec.amount_owed_cents / 100
+        if rec.payment_status == "unpaid":
+            total_owed += amt
+        result.append({"event_id": rec.event_id, "amount_owed": f"${amt:.2f}", "payment_status": rec.payment_status})
+    return {"events": result, "total_owed": f"${total_owed:.2f}"}
