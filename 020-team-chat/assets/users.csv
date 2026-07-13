@@ -1,8 +1,6 @@
 username,display_name,password
-alice,Alice Nguyen,password-alice
-bob,Bob Lee,password-bob
-carol,Carol Smith,password-carol
-dave,Dave Johnson,password-dave
-eve,Eve Turner,password-eve
-
-
+alice,Alice Smith,password123
+bob,Bob Jones,password456
+charlie,Charlie Brown,password789
+david,David Wilson,password012
+eve,Eve Adams,password345
