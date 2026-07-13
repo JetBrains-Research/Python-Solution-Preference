@@ -1,0 +1,22 @@
+# Database files
+*.db
+*.sqlite
+
+# Uploaded files
+/app/uploads/*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment
+.env
+.venv/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
